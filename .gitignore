@@ -9,3 +9,6 @@ obj/
 # IDE
 .idea/
 .vscode/
+
+#Data
+sample-documents/
