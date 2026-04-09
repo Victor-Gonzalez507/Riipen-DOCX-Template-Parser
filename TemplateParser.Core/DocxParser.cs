@@ -1,39 +1,131 @@
+using DocumentFormat.OpenXml.Office2010.Excel;
 using DocumentFormat.OpenXml.Packaging;         // Needed for WordProcessingDocument.
 using DocumentFormat.OpenXml.Wordprocessing; 
+using System.Collections.Generic;
+using System.Text.Json;
 namespace TemplateParser.Core;
 
 public sealed class DocxParser
 {
     public ParserResult ParseDocxTemplate(string filePath, Guid templateId)
     {
-        // 1. Open the word document in read mode.
-    // 2. Parse the document.xml into XML object using the DocumentFormat.OpenXml library.
-    using (WordprocessingDocument wordProcessingDocument = WordprocessingDocument.Open(filePath, false))
-    {
-        // The original line we wrote in class:
-        // Body body = wordProcessingDocument.MainDocumentPart.Document.Body;
-        
-        // A more robust version that fails gracefully if the document is not structured properly:
-        Body? body = wordProcessingDocument?.MainDocumentPart?.Document?.Body;
-        ArgumentNullException.ThrowIfNull(body, "Document is empty.");
-        
-        // 3. Loop through every paragraph.
-        foreach (Paragraph p in body.Descendants<Paragraph>())
-        {
-            // 4. Extract and display the paragraph style.
-            // The original line we wrote in class:
-            // string style = p?.ParagraphProperties?.ParagraphStyleId?.Val;
-            // A more robust version:
-            string? style = p?.ParagraphProperties?.ParagraphStyleId?.Val ?? "No Style";
-            Console.WriteLine(style);
+        //Creates a list to write down the 
+        List<Node> listNodes = new List<Node>();
+        //Creates a stack to know whos the parent of the next section
+        Stack<(Node node, int level)> parentStack = new Stack<(Node node, int level)>();
 
-            // 5. Extract and display the actual text.
+        // Opens the word document in read mode.
+        using (WordprocessingDocument wordProcessingDocument = WordprocessingDocument.Open(filePath, false))
+        {
+        
+            //Opens the main part of the document and returns null is anything is null
+            Body? body = wordProcessingDocument?.MainDocumentPart?.Document?.Body;
+            //if the body is empty it will throw an error "Document is empty"
+            ArgumentNullException.ThrowIfNull(body, "Document is empty.");
+        
+
+            // Loops through every paragraph.
+            foreach (Paragraph p in body.Descendants<Paragraph>())
+        {
+            //this extracts the style of the paragaph, "No Style" means its a normal paragraph
+            string? style = p?.ParagraphProperties?.ParagraphStyleId?.Val ?? "No Style";
+
+            /*
+            // Extracst the actual text.
             string? text = p?.InnerText;
-            Console.WriteLine(text);
+
+            //Prints the Style firs the the actual text
+            Console.WriteLine($"Style: {style}");
+            Console.WriteLine($"Text: {text}");
 
             // I added the following line to space the output out a little better:
             Console.WriteLine("--------------------------------");
-            return null;
+            */
+
+            //This is the heading level
+            int heading = 0;
+
+            //THis determines what heading level to give the node depending on the heading
+            if(style == "Heading1")
+                {
+                    heading = 1;
+                }
+                else if(style == "Heading2")
+                {
+                    heading = 2;
+                }
+                else if(style == "Heading3")
+                {
+                    heading = 3;
+                }
+                else
+                {
+                    continue;
+                }
+
+            //Determines what parent the node has
+            while(parentStack.Count >0 && parentStack.Peek().level > heading)
+                {
+                    parentStack.Pop(); //will remove the node from the stack until it reaches the same level or less
+                }
+
+                //this determines what kind of type is added to the node
+                string styleType = "Section";
+
+                //this sets styletype to the type for the node
+                if(style == "Heading1")
+                {
+                    styleType = "section";
+                }
+                else if(style == "Heading2")
+                {
+                    styleType = "subsection";
+                }
+                else if(style == "Heading3")
+                {
+                    styleType = "subsubsection";
+                }
+
+                //This is where the actual code is written
+                Node newNode = new Node
+                {
+                    Id = Guid.NewGuid(), //each node has a personal UUID
+                    TemplateId = templateId, //Used templateId from the parameters ofParseDocxTemplate
+                    ParentId = parentStack.Count > 0 ? parentStack.Peek().node.Id : null, //finds the Id of the parent Section using the stack
+                    Type = styleType, //This is where its set either section, subsection, or subsubsection
+                    Title = style, //This is wether it was heading 1, 2, or 3
+                    OrderIndex = 0, //what index its on, basically how many sections were made before(its set to zero at the start then changes next)
+                    MetadataJson = "{}"
+                };
+            
+                //This is where the OrderIndex are counted
+                int siblingCount = 0; // counts how many other of the same nodes are under the Section
+                foreach (var n in listNodes)
+                    {
+                        if (n.ParentId == newNode.ParentId)
+                        {
+                            siblingCount++;
+                        }
+                    }
+
+                    //sets OrderIndex from newNode to the correct index
+                    newNode.OrderIndex = siblingCount;
+
+                    //adds the newNode to the listNodes
+                    listNodes.Add(newNode);
+                    //adds the newNode and the heading as a tuple to the stack
+                    parentStack.Push((newNode, heading));
+
+                    string jsonString = JsonSerializer.Serialize(listNodes, new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    });
+
+                    Console.WriteLine(jsonString);
+
+
+
+
         }
     }
 
